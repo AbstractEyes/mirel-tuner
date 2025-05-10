@@ -1,0 +1,1 @@
+# FROMAGE optimizer implementation stub

@@ -1,0 +1,1 @@
+# multires noise scheduler stub
