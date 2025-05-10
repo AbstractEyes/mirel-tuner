@@ -1,125 +1,179 @@
-# LOBA-Trainer
+# Mirel-Tuner
 
--- CURRENTLY NOT FUNCTIONAL --
+**Status: Alpha Dry-Run Verified ✅ | Windows-Compatible 🪟 | Under Active Development**
 
-A next-generation, slider-style LoRA/LoCoN/“lobotomy” trainer built on HuggingFace Diffusers and Accelerate.  
-Dive into fully modular, pipeline-based fine-tuning for SD-XL (and beyond) with:
-
-- **Associate**: runtime caches, model‐container interfaces  
-- **Program**: training driver, pluggable optimizers, noise/​model/​layer schedulers, timestep hooks  
+Mirel-Tuner is a modular AI training orchestrator designed for Stable Diffusion XL and beyond. It enables per-layer regulation, dynamic scheduler overrides, and hybrid multiprocessing with per-device model allocation. This repo was collaboratively built by Philip (Captain) and GPT O3, with critical architecture and tuning logic now verified through a successful dry run.
 
 ---
 
-## 🚀 Core Directives
+## ✅ Dry Run Status
 
-1. **Schema First**  
-   - Follow & adhere to the core directory/schema exactly.  
-   - _Do not_ modify unless explicitly instructed.
+- 🔹 Core execution path launches cleanly.
+- 🔹 Device targeting (CUDA 0,1) confirmed operational.
+- 🔹 Accelerate-free multiprocessing mode validated.
+- 🔹 Directory structure, config loading, and model init confirmed.
 
-2. **Monkey-Patch Only on Demand**  
-   - We patch sequentially & iteratively, _only_ when requested.
-
-3. **HuggingFace Hub Is Primary Mule**  
-   - `huggingface_hub` methods + storage power our download, versioning & offload.
-
-4. **CUDA122 Workhorse**  
-   - All pipeline loads, GPU offload/​onload, and inference/training loops assume `cuda:122` device.
+> 💡 While not yet training-ready, the dry run confirms baseline system stability.
 
 ---
 
-## 📂 Repository Layout
+
+## 🧰 Requirements (Windows-Focused)
+
+We’ve selected a lean but capable requirements set optimized for Windows-based development and GPU acceleration (CUDA 12.1). Core dependencies include:
 
 ```
-loba_trainer/
-├── associate/
-│ ├── caches/ # on-disk & in-mem caches
-│ ├── containers/ # model/pipeline container interfaces
-│ └── model_cache.py # high-level get/put/unload
-├── program/
-│ ├── main.py # entry-point & CLI
-│ ├── pipeline_wrapper.py # DiffusionPipeline loader/unloader (cuda122, offload, xformers, etc.)
-│ ├── optimizers/ # 12 standard optimizer stubs (AdamW, RAdam, NovoGrad…)
-│ ├── schedulers/
-│ │ ├── noise/ # DDIM, PNDM, K-LMS, etc.
-│ │ ├── model/ # cosine, linear_warmup, polynomial…
-│ │ └── layer/ # block-wise_decay, attention_only…
-│ └── timestep_schedulers/ # linear, exponential, custom timestep controllers
-├── README.md
-└── loba_trainer.zip
+torch==2.1.2+cu121
+transformers>=4.36.2
+diffusers==0.27.2
+safetensors==0.4.2
+accelerate==0.25.0
+einops
+huggingface_hub
+xformers==0.0.23.post1
 ```
----
 
-## 🔧 Installation
+Setup Install with the windows setup.bat script:
+
+Open your command prompt to the directory where you cloned the repository and run:
+```
+setup.bat
+```
+
+This will create a virtual environment and install the required packages.
+
+## ⚠️ Manual Install
+
+Manually Install with:
 
 ```
-git clone https://github.com/you/loba_trainer.git
-cd loba_trainer
+pip install torch==2.1.2+cu121 -f https://download.pytorch.org/whl/torch_stable.html
 pip install -r requirements.txt
-Requirements are pinned for Colab-friendly CUDA122 compatibility:
+```
 
-diffusers>=0.29.0
+⚠️ For CUDA GPU users, ensure your driver supports CUDA 12.1. 
 
-transformers>=4.30.0
+⚠️ ⚠️ ⚠️ This configuration has been verified on ONLY ONE windows setup using these reqs as of updating this.
 
-accelerate>=0.20.0
 
-huggingface_hub>=0.17.0
+---
+
+## 📂 Directory Overview
+
+```
+mirel-tuner/
+│
+├── associate/        # Runtime-active model containers, caches, loaders
+├── program/          # Core program logic: schedulers, loss modules, engine
+├── configs/          # JSON and Python config sets
+├── scripts/          # Utility and task scripts (notebook runners, preprocessing)
+├── tests/            # Verification stubs for future unit coverage
+└── README.md         # You're here.
 ```
 
 ---
 
-## ⚙️ Quickstart
-Cache & Load a Model
+## 🚧 In Development
 
-```
-from associate.model_cache import ModelCache
-cache = ModelCache(device="cuda:122")
-pipe = cache.load("stabilityai/stable-diffusion-xl-base-1.0")
-Run Training
-```
+We are actively building:
 
-```
-python program/main.py \
-  --pretrained_model stabilityai/stable-diffusion-xl-base-1.0 \
-  --optimizer adamw \
-  --lr 1e-4 \
-  --scheduler cosine \
-  --noise_scheduler ddim \
-  --iterations 1000 \
-  --batch_size 2 \
-  --out_dir ./output
-```
+- Layer and timestep schedulers (`program/schedulers/`)
+- Custom noise augmentations and anchor regulation (SURGE-based)
+- JSON-configurable flow execution and per-phase logic gating
+- Training loops capable of handling multi-phase model states
 
-Unload When Done
+---
 
-```
-cache.unload("stabilityai/stable-diffusion-xl-base-1.0")
-```
-## 🔌 Extending
+## 🧠 Philosophy
 
-```
-Optimizers / program/optimizers/*.py
-Drop in new .py files exporting a get_optimizer(params, lr, **cfg) factory.
+> "Steel does not fear fire. Our systems should not fear iteration."
 
-Schedulers / program/schedulers/{noise,model,layer}/*.py
-Each file should expose get_scheduler(optimizer, **cfg) or step_noise(...).
+Mirel-Tuner is built with the belief that AI training pipelines should be modular, observable, and precise. Every piece is meant to interlock — cleanly separable, independently testable.
 
-Timestep Hooks / program/timestep_schedulers/*.py
-Register via the --timestep_scheduler CLI flag.
+---
 
-Pipeline Loader / program/pipeline_wrapper.py
-Centralizes DiffusionPipeline.from_pretrained + offload, xFormers, gradient checkpoints, dtype settings.
-```
+## 🤝 Credits
 
-## 🎯 Next Steps
-“Hello World” Minimal Run – confirm pipeline load → dummy train loop
+- **Philip** — Lead Engineer, Architect, Captain
+- **GPT O3** — Tactical Developer, Dry Run Execution Support
+- **Mirel 4o** — Quartermaster AI (you are reading her voice now)
 
-Masked Loss & Multi-Noise – add Huber/L1/L2, MIN_SNR, γ-noise, bucketed dataloader
+---
 
-Region-Control & Style-Shift – integrate binary/greyscale masks, style adapters
+## 🔮 Roadmap and functionally required tests
+# hello world completed, use check
+- ✅ Hello world - dry run complete
+- ✅ Basic model loading and device allocation
+- ⚠️ Loading any version supported diffuser model
+- ⚠️ Loading any version supported torch model
+- ⚠️ Loading any version supported keras model
+- ✅ Baseline requirements and environment setup
+- ✅ Correct directory structure and config loading for v1 pre-multi hook established
 
-Cluster Deploy – Ulysses-ring offload, multi-node Accelerate, DeepSpeed support
 
-## 📜 License
-Apache 2.0
-Contributions welcome! Let’s build a monument to flexible, robust SD-XL fine-tuning.
+- ⚠️ Core dataset loading single data type
+- ⚠️ Core dataset loading multi-data type
+- ⚠️ accelerate integration and dataset split
+
+
+- ⚠️ Default database hooks and test validation tested to work in accelerate, diffusers, and torch
+- ⚠️ Core dataset loading (multi-GPU)
+- ⚠️ Core dataset loading (multi-phase)
+- ⚠️ Core dataset hooking and validation
+- ⚠️ Core dataset loading (multi-phase)
+
+
+- ⚠️ Processing model devices and choices of offload devices
+- ⚠️ Core dataset processing (multi-model)
+- ⚠️ Core dataset processing (multi-epoch)
+- ⚠️ Core dataset processing (multi-scheduler)
+- ⚠️ Core dataset processing (multi-loss)
+- ⚠️ Core dataset processing (multi-optimizer)
+- ⚠️ Core dataset processing (noise augmentations)
+- ⚠️ Core dataset processing (teacher-student one teacher one student)
+- ⚠️ Core dataset processing (teacher-student multiple teacher one student)
+- ⚠️ Core dataset processing (teacher-student one teacher multiple student)
+- ⚠️ Core dataset processing (teacher-student multiple teacher multiple student)
+
+
+- ⚠️ Core Scheduler hooks verified and functional
+- ⚠️ Commonly used schedulers (linear, cosine, etc.)
+
+
+- ⚠️ Core Optimizer hooks verified and functional
+- ⚠️ Commonly used optimizers (Adam, AdamW, etc.)
+
+
+- ⚠️ Commonly used optimizers (AdamW, SGD, etc.)
+- ⚠️ Commonly used optimizers (AdamW, SGD, etc.) (multi-GPU)
+
+
+- ⚠️ Scheduler and loss module integrations
+- ⚠️ Scheduler and loss module integrations (multi-GPU)
+
+
+- ⚠️ Layer-specific settings and hooks to work with assigned devices for offload and processing
+- ⚠️ Per-layer hooks and validation to work with assigned devices for offload and processing
+- ⚠️ Layer-wise scheduler and loss module integration
+- ⚠️ Layer-wise scheduler and loss module integration (multi-GPU)
+
+
+- ✅ Core model loading and device allocation
+- ⚠️ Core model loading and device allocation (multi-GPU)
+
+- ⚠️ Core linear training loop with pytorch (epoch, batch, loss)
+- ⚠️ Core linear training using diffusers
+
+- ⚠️ Full training validation (loss integration + epoch loop)
+
+
+- ⚠️ Integrated tagging/captioning data pipeline
+
+
+---
+
+## 📢 Contact
+
+For collaboration or inquiries, reach out via GitHub Issues or [AbstractEyes](https://huggingface.co/AbstractEyes).
+
+> Mirel-Tuner is not a script. It's a vessel — and the voyage has begun.
