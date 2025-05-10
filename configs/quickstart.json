@@ -6,7 +6,7 @@
     "offload": "cpu"
   },
 
-  "cache_dir": "E:/mirel_hf_cache",
+  "cache_dir": "./mirel_hf_cache",
 
   "model": {
     "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
