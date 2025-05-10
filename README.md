@@ -1,5 +1,7 @@
 # LOBA-Trainer
 
+-- CURRENTLY NOT FUNCTIONAL --
+
 A next-generation, slider-style LoRA/LoCoN/“lobotomy” trainer built on HuggingFace Diffusers and Accelerate.  
 Dive into fully modular, pipeline-based fine-tuning for SD-XL (and beyond) with:
 
