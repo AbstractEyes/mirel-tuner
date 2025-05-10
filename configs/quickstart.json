@@ -1,0 +1,14 @@
+{
+  "precision": "float16",
+  "devices": {
+    "primary": "cuda:0",
+    "offload": "cpu"
+  },
+  "model": {
+    "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
+    "revision": "main"
+  },
+  "lora": [],
+  "scheduler": "DDPMScheduler",
+  "cache_limit_gb": 40
+}
