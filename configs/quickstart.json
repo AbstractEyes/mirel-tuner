@@ -1,13 +1,25 @@
 {
   "precision": "float16",
+
   "devices": {
     "primary": "cuda:0",
     "offload": "cpu"
   },
+
+  "cache_dir": "D:/AI/mirel_cache",
+
   "model": {
     "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
-    "revision": "main"
+    "revision": "main",
+    "allow_patterns": [
+      "model_index.json",
+      "diffusion_*_model.*",
+      "text_encoder/*",
+      "tokenizer/*",
+      "vae/*"
+    ]
   },
+
   "lora": [],
   "scheduler": "DDPMScheduler",
   "cache_limit_gb": 40
