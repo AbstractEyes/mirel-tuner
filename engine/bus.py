@@ -1,4 +1,19 @@
 # engine/bus.py
+
+# The program lives and dies through multi-context interaction using this bus.
+# The primary "god" global singleton that is meant to maintain state across all devices for hooking dispatch.
+# It's primary goal is just a messenger, but it's specifically formatted to support splits, large data transfer.
+# todo: test accelerate properly with more than a few devices for moving active data.
+# todo: test the pytorch ring for robustness and speed with systems like runpod.
+# todo: test ulysses and other systems for robustness and speed.
+# todo: test large data transfer.
+# todo: full bus manifest for the baseline structure.
+# todo: a full rewrite in C based on the bus structure is required for a full and robust data moving implementation.
+# todo: requires a proper C++ wrapper for the bus to be fully functional to communicate with the subsystems of cuda directly.
+# todo: requires nvidia developers license to get the full cuda API and access to the necessary functions, NDA approved streamline only applied here in the future.
+
+# PRIMARILY, we want to move file location refs if moving large files; so the responsibility of those files needs to be hook maintained.
+# Layer translation, transfer, and other things are all secondary to this potential and require the more robust wrappers to implement quickly.
 ##############################################
 from __future__ import annotations
 import asyncio

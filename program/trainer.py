@@ -10,8 +10,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from engine.noise_sched import get_scheduler
-from .hooks import Hook
-from .async_utils import run_async
+from hooking.bus.train_hooks import Hook
+from engine.async_utils import run_async
 
 
 @dataclass

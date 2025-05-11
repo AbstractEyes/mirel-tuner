@@ -3,8 +3,8 @@ import argparse
 import json
 import os
 
-from associate.pipeline_wrapper import PipelineWrapper
-from plugins import loader as _plugin_loader  # registers any plugin hooks
+from associate.pipeline.pipeline_wrapper import PipelineWrapper
+
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser("mirel-tuner")

@@ -1,6 +1,6 @@
 import re, torch
 from typing import List, Dict, Any
-from program.hooks import BaseHook
+from hooking.bus.train_hooks import BaseHook
 from engine.layer_sched import get_layer_schedule
 
 class BaseLayerHook(BaseHook):
