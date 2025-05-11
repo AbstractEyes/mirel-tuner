@@ -1,84 +1,78 @@
-"""
-ModelCache v3.1  –  lazy, metadata-driven downloads
-────────────────────────────────────────────────────
-• Reads only model_index.json first.
-• Determines required weight filenames:
-      – if weights/tensor_files listed → use them directly
-      – else (e.g. SD-XL) scan repo once and pick *.safetensors / *.bin
-        inside the component folders named in model_index.json.
-• Downloads each blob exactly once into the global HF cache,
-  then links it into the project cache (cfg["cache_dir"] or default).
-• Per-OS LRU eviction by total bytes.
-"""
-
-from __future__ import annotations
-import json, os, shutil, time
+##############################################
+from future import annotations
+import json
+import os
+import shutil
+import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 
 from huggingface_hub import hf_hub_download, list_repo_files
 
-HF_CACHE_BASE = (
-    Path(os.getenv("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
-)
+##############################################
+HF_CACHE_BASE = Path(os.getenv("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
 _DEFAULT_LIMIT_GB = 40
 
-
+##############################################
 class ModelCache:
-    def __init__(
-        self,
-        size_limit_gb: int = _DEFAULT_LIMIT_GB,
-        cache_root: Path | None = None,
-    ):
-        self.cache_root = cache_root or Path.home() / ".cache" / "mirel_tuner"
-        self.cache_root.mkdir(parents=True, exist_ok=True)
 
-        self.size_limit = size_limit_gb * (1024**3)
-        self.meta_file = self.cache_root / "meta.json"
-        self.meta: Dict[str, float] = (
-            json.loads(self.meta_file.read_text()) if self.meta_file.exists() else {}
-        )
+    """
+        Resolve and stage exactly the weight blobs a Diffusers pipeline needs.
+        • Reads model_index.json first (cheap).
+        • Determines weight filenames via tensor_files / weight_files.
+        • If none listed (e.g. SD-XL) scans repo once for *.safetensors or *.bin
+          inside folders referenced by model_index.json.
+        • Downloads each blob once into HF cache, then hard-links into
+          project cache (root).
+        • LRU eviction by total bytes.
+    """
 
-    # ──────────────────────────────────────────────────────────────
-    def get(
-        self,
-        repo_id: str,
-        *,
-        revision: str | None = None,
-        allow_download: bool = True,
-    ) -> Path:
+    def __init__(self,
+                 root: Path | str | None = None,
+                 size_limit_gb: int = _DEFAULT_LIMIT_GB):
+        self.root = Path(root).expanduser() if root else Path.home() / ".cache" / "mirel_tuner"
+        self.root.mkdir(parents=True, exist_ok=True)
+
+        self.size_limit = size_limit_gb * 1024 ** 3
+        self.meta_file  = self.root / "meta.json"
+        self.meta: Dict[str, float] = json.loads(self.meta_file.read_text()) if self.meta_file.exists() else {}
+
+    ##########################################
+    def stage(self,
+              repo_id: str,
+              revision: str | None = None,
+              patch_fn: Optional[Callable[[Path], None]] = None) -> Path:
+        """
+        Ensure all required weight files are present locally.
+        Returns the local directory path.
+        patch_fn(local_dir) can mutate files in-place (e.g. convert to bf16).
+        """
         key = f"{repo_id}@{revision or 'main'}"
-        local_dir = self.cache_root / key
+        loc = self.root / key
 
         if key not in self.meta:
-            if not allow_download:
-                raise FileNotFoundError(key)
+            loc.mkdir(parents=True, exist_ok=True)
 
-            local_dir.mkdir(parents=True, exist_ok=True)
+            # pull model_index.json only
+            idx = Path(hf_hub_download(repo_id,
+                                       filename="model_index.json",
+                                       revision=revision,
+                                       cache_dir=HF_CACHE_BASE,
+                                       local_dir=loc))
 
-            # 1) Fetch model_index.json only
-            idx_path = Path(
-                hf_hub_download(
-                    repo_id,
-                    filename="model_index.json",
-                    revision=revision,
-                    cache_dir=HF_CACHE_BASE,
-                    local_dir=local_dir,
-                )
-            )
+            # resolve file list
+            files = self._resolve_weights(repo_id, revision, idx)
 
-            # 2) Resolve weight filenames
-            weights = self._resolve_weights(repo_id, revision, idx_path)
+            # download/link each file
+            for f in files:
+                hf_hub_download(repo_id,
+                                filename=f,
+                                revision=revision,
+                                cache_dir=HF_CACHE_BASE,
+                                local_dir=loc)
 
-            # 3) Download/link each weight file
-            for fname in weights:
-                hf_hub_download(
-                    repo_id,
-                    filename=fname,
-                    revision=revision,
-                    cache_dir=HF_CACHE_BASE,
-                    local_dir=local_dir,
-                )
+            if patch_fn:
+                patch_fn(loc)
 
             self.meta[key] = time.time()
             self._save_meta()
@@ -87,12 +81,13 @@ class ModelCache:
             self.meta[key] = time.time()
             self._save_meta()
 
-        return local_dir
+        return loc
 
-    # ───────────────────────── helpers ───────────────────────────
-    def _resolve_weights(
-        self, repo_id: str, revision: str | None, idx_path: Path
-    ) -> List[str]:
+    ##########################################
+    def _resolve_weights(self,
+                         repo_id: str,
+                         revision: str | None,
+                         idx_path: Path) -> List[str]:
         data = json.loads(idx_path.read_text())
         needed: set[str] = set()
         folders: set[str] = set()
@@ -105,38 +100,31 @@ class ModelCache:
             elif isinstance(comp, list):
                 folders.update({p.strip("/") for p in comp})
 
-        # If only folders listed, enumerate repo once
         if folders and not needed:
             repo_files = list_repo_files(repo_id, revision=revision)
             for f in repo_files:
-                if any(f.startswith(folder + "/") for folder in folders) and f.endswith(
-                    (".safetensors", ".bin")
-                ):
+                if any(f.startswith(f"{d}/") for d in folders) and f.endswith((".safetensors", ".bin")):
                     needed.add(f)
 
         if not needed:
-            raise RuntimeError(
-                f"No weight files resolved for {repo_id}@{revision or 'main'} "
-                f"via {idx_path}. Cannot proceed."
-            )
+            raise RuntimeError(f"No weight files resolved for {repo_id}@{revision or 'main'}")
 
         return sorted(needed)
 
+    ##########################################
     def _save_meta(self) -> None:
         self.meta_file.write_text(json.dumps(self.meta))
 
+    ##########################################
     def evict(self, n: int = 1) -> None:
         for key in sorted(self.meta, key=self.meta.get)[:n]:
-            shutil.rmtree(self.cache_root / key, ignore_errors=True)
+            shutil.rmtree(self.root / key, ignore_errors=True)
             del self.meta[key]
         self._save_meta()
 
+    ##########################################
     def _evict_if_full(self) -> None:
-        total = sum(
-            p.stat().st_size for p in self.cache_root.rglob("*") if p.is_file()
-        )
+        total = sum(p.stat().st_size for p in self.root.rglob("*") if p.is_file())
         while total > self.size_limit and self.meta:
             self.evict(1)
-            total = sum(
-                p.stat().st_size for p in self.cache_root.rglob("*") if p.is_file()
-            )
+            total = sum(p.stat().st_size for p in self.root.rglob("*") if p.is_file())
