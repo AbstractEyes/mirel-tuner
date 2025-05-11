@@ -128,12 +128,7 @@ mirel-tuner/
 
 ## 🚧 In Development
 
-We are actively building:
-
-- Layer and timestep schedulers (`program/schedulers/`)
-- Custom noise augmentations and anchor regulation (SURGE-based)
-- JSON-configurable flow execution and per-phase logic gating
-- Training loops capable of handling multi-phase model states
+This under constant development and will not be labeled stable until the system is fully functional and all components are verified to work with the system on multiple devices and setups.
 
 ---
 
