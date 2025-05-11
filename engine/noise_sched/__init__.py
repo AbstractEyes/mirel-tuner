@@ -1,7 +1,9 @@
 from .constant import ConstantNoiseScheduler
+from diffusers import DDPMScheduler
 
 _SCHED_REGISTRY = {
     "constant": ConstantNoiseScheduler,
+    "ddpmscheduler": DDPMScheduler,
 }
 
 

@@ -18,6 +18,7 @@ async def run_async(
     *args: Any,
     executor: Executor | None = None,
     loop: asyncio.AbstractEventLoop | None = None,
+    **kwargs: Any
 ) -> Any:
     """Run *fn* in the current loop; off-load to *executor* if provided."""
     loop = loop or asyncio.get_running_loop()

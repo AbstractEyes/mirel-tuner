@@ -1,0 +1,19 @@
+{
+  "model": {
+    "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
+    "revision": null
+  },
+  "cache_dir": "hf_cache",
+  "precision": "float32",
+  "lora": [],
+  "scheduler": "DDPMScheduler",
+  "devices": {},
+
+  "num_samples": 100,
+  "batch_size": 4,
+  "epochs": 2,
+  "learning_rate": 0.0001,
+  "image_size": [64, 64],
+  "channels": 3,
+  "data_dir": "test_data"
+}

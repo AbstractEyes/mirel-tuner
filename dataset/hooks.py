@@ -64,3 +64,4 @@ class ComposeHook(BaseDataHook):
         for h in self.hooks:
             batch = h.on_batch_collate(batch, **ctx)
         return batch
+

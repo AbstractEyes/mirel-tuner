@@ -5,9 +5,9 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Literal, Optional
 
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import torch
 from torch.utils.data import DataLoader
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 from engine.noise_sched import get_scheduler
 from .hooks import Hook
@@ -16,11 +16,12 @@ from .async_utils import run_async
 
 @dataclass
 class Trainer:
-    # -------------------------------------------------- public ctor args
+    # ───────────────────────────────────────── public args ─────────────
     model: torch.nn.Module
     optimiser: torch.optim.Optimizer
-    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+    loss_fn: Callable[[torch.Tensor, Dict[str, Any]], torch.Tensor]
     noise_sched_cfg: Dict[str, Any]
+
     device: str | torch.device = "cuda"
 
     # concurrency
@@ -30,16 +31,20 @@ class Trainer:
     # hooks
     hooks: List[Hook] = field(default_factory=list)
 
-    # -------------------------------------------------- internal fields
-    _executor_pool: Optional[ThreadPoolExecutor | ProcessPoolExecutor] = field(
-        init=False, default=None
-    )
+    # per-bucket min-SNR gamma offsets  e.g. { "(512,512)": -1.0, "(768,768)": +0.5 }
+    gamma_map: Dict[str, float] = field(default_factory=dict)
+    base_gamma: float = 7.0
+
+    # ───────────────────────────────────────── internal fields ─────────
+    _executor_pool: Optional[ThreadPoolExecutor | ProcessPoolExecutor] = field(init=False, default=None)
+    _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
     state: Dict[str, Any] = field(init=False, default_factory=dict)
 
-    # -------------------------------------------------- lifecycle
+    # ───────────────────────────────────────── lifecycle ───────────────
     def __post_init__(self):
         self.device = torch.device(self.device)
         self.model.to(self.device)
+
         self.noise_sched = get_scheduler(**self.noise_sched_cfg)
 
         if self.concurrency == "thread":
@@ -47,16 +52,13 @@ class Trainer:
         elif self.concurrency == "process":
             self._executor_pool = ProcessPoolExecutor(max_workers=self.workers)
 
-        # global state visible to hooks / schedulers
-        self.state.update(
-            step=0,
-            epoch=0,
-            device=self.device,
-            snr_scale=1.0,
-        )
+        self.state.update(step=0, epoch=0, snr_scale=1.0)
 
-    # -------------------------------------------------- hook dispatcher
+    # ───────────────────────────────────────── hook dispatcher ─────────
     async def _dispatch(self, event: str, *args, **kwargs):
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
+
         tasks = []
         for hk in self.hooks:
             cb = getattr(hk, event, None)
@@ -66,89 +68,82 @@ class Trainer:
                 run_async(
                     cb,
                     *args,
-                    trainer=self,
                     executor=self._executor_pool,
-                    loop=asyncio.get_running_loop(),
+                    loop=self._loop,
+                    trainer=self,
                     **kwargs,
                 )
             )
         if tasks:
             await asyncio.gather(*tasks)
 
-    # -------------------------------------------------- fit / validate
-    async def _fit_async(
-        self,
-        train_loader: DataLoader,
-        val_loader: DataLoader | None,
-        epochs: int,
-    ):
+    # ───────────────────────────────────────── public fit ──────────────
+    async def _fit_async(self, train_loader: DataLoader, epochs: int):
         await self._dispatch("on_fit_start")
         for epoch in range(epochs):
             self.state["epoch"] = epoch
             await self._train_epoch_async(train_loader)
-            if val_loader is not None:
-                await self._validate_epoch_async(val_loader)
         await self._dispatch("on_fit_end")
 
-    def fit(
-        self,
-        train_loader: DataLoader,
-        val_loader: DataLoader | None = None,
-        epochs: int = 1,
-    ):
-        """Synchronous wrapper."""
-        asyncio.run(self._fit_async(train_loader, val_loader, epochs))
+    def fit(self, train_loader: DataLoader, epochs: int = 1):
+        asyncio.run(self._fit_async(train_loader, epochs))
 
-    # -------------------------------------------------- train / val impl
+    # ───────────────────────────────────────── epoch loops ─────────────
     async def _train_epoch_async(self, loader: DataLoader):
-        await self._dispatch("on_epoch_start")
+        await self._dispatch("on_epoch_start", self.state["epoch"])
         self.model.train()
 
         for batch_idx, batch in enumerate(loader):
             self.state["step"] += 1
-            await self._dispatch("on_batch_start", batch_idx=batch_idx, batch_meta=batch.get("bucket_meta"))
 
-            # --- CPU → GPU transfer
+            await self._dispatch(
+                "on_batch_start",
+                batch_idx=batch_idx,
+                batch_meta=batch.get("bucket_key"),
+            )
+
+            # move tensors to device
             for k, v in batch.items():
                 if torch.is_tensor(v):
-                    batch[k] = v.to(self.device)
+                    batch[k] = v.to(self.device, non_blocking=True)
 
-            # --- optional snr_scale from DataHook meta
-            if "bucket_meta" in batch and "snr" in batch["bucket_meta"]:
-                self.state["snr_scale"] = batch["bucket_meta"]["snr"]
+            # choose latent key
+            latent = batch.get("latent", batch.get("image"))
+            if latent is None:
+                raise KeyError("Batch must contain 'latent' or 'image' tensor.")
 
-            # --- noise schedule
-            latent = batch["latent"]
-            batch_state = {"latent": latent, "snr_scale": self.state["snr_scale"]}
-            batch_state = self.noise_sched.step(batch_idx, batch_state)
-            noisy_latent = batch_state["latent"]
+            # resolve per-bucket gamma
+            bucket_key = batch.get("bucket_key")
+            gamma = self.base_gamma + self.gamma_map.get(str(bucket_key), 0.0)
 
-            # --- forward / loss / backward
-            outputs = self.model(noisy_latent)
+            # noise schedule step
+            sched_state = self.noise_sched.step(
+                idx=batch_idx,
+                state={"latent": latent, "gamma": gamma},
+            )
+            noisy = sched_state["latent"]
+
+            # forward
+            outputs = self.model(noisy)
             await self._dispatch("on_forward_end", outputs=outputs)
 
-            loss = self.loss_fn(outputs, batch["target"])
-            await self._dispatch("on_loss_computed", loss=loss.item())
+            loss = self.loss_fn(outputs, batch)
+            await self._dispatch("on_loss_computed", loss=float(loss))
 
+            # backward
             loss.backward()
             await self._dispatch("on_backward_end")
 
+            await self._dispatch("on_optim_step_start")
             self.optimiser.step()
             self.optimiser.zero_grad()
+            await self._dispatch("on_optim_step_end")
+
             await self._dispatch("on_step_end")
 
-        await self._dispatch("on_epoch_end")
+        await self._dispatch("on_epoch_end", self.state["epoch"])
 
-    async def _validate_epoch_async(self, loader: DataLoader):
-        await self._dispatch("on_validation_start")
-        self.model.eval()
-        with torch.no_grad():
-            for batch in loader:
-                # validation logic omitted for brevity
-                pass
-        await self._dispatch("on_validation_end")
-
-    # -------------------------------------------------- utils
+    # ───────────────────────────────────────── utils ───────────────────
     def add_hook(self, hook: Hook):
         self.hooks.append(hook)
 
