@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 import torch
 
-from ..base_sched import BaseScheduler
+from engine.base_sched import BaseScheduler
 
 
 class ConstantNoiseScheduler(BaseScheduler):

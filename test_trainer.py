@@ -18,12 +18,12 @@ from torch.utils.data import DataLoader
 
 from engine.bus import emit, on
 from associate.pipeline.pipeline_wrapper import PipelineWrapper
-from hooking.dataset.buckets import (
+from engine.hooking.dataset import (
     BucketDataset, BucketConfig, ComposeCallback,
     ImageLoadCB, ToDeviceCB
 )
 from program.trainer import Trainer
-from hooking.bus.train_hooks import BaseHook
+from engine.hooking.bus import BaseHook
 
 ##############################################
 # 1) load config

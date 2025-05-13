@@ -9,8 +9,8 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import torch
 from torch.utils.data import DataLoader
 
-from engine.noise_sched import get_scheduler
-from hooking.bus.train_hooks import Hook
+from engine.prepared.noise_sched import get_scheduler
+from engine.hooking.bus.train_hooks import Hook
 from engine.async_utils import run_async
 
 

@@ -1,6 +1,6 @@
 import torch
 
-from engine.noise_sched import get_scheduler
+from engine.prepared.noise_sched import get_scheduler
 
 def test_constant_noise_scheduler_determinism():
     latent = torch.zeros(1, 4, 8, 8)

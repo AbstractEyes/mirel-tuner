@@ -1,7 +1,7 @@
 import re, torch
 from typing import List, Dict, Any
-from hooking.bus.train_hooks import BaseHook
-from engine.layer_sched import get_layer_schedule
+from engine.hooking.bus.train_hooks import BaseHook
+from engine.prepared.layer_sched import get_layer_schedule
 
 class BaseLayerHook(BaseHook):
     """Controls a subset of model parameters via regex patterns."""
