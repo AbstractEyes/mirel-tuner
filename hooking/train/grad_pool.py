@@ -30,9 +30,21 @@ class GradPool:
     def accumulate(self, tag: str, grad: torch.Tensor):
         self._accum[tag] = self._accum.get(tag, 0) + grad
 
-    def step(self):
-        for t in self._accum.values():
-            t /= t.dtype  # or whatever scale
+    def step(self, scale: float = 1.0):
+        """Flush accumulated gradients back to registered objects."""
+        for tag, grad in self._accum.items():
+            obj = self._registry.get(tag)
+            if isinstance(obj, torch.nn.Module):
+                for p in obj.parameters():
+                    if p.grad is None:
+                        p.grad = grad.clone() * scale
+                    else:
+                        p.grad.add_(grad, alpha=scale)
+            elif torch.is_tensor(obj):
+                if getattr(obj, "grad", None) is None:
+                    obj.grad = grad.clone() * scale
+                else:
+                    obj.grad.add_(grad, alpha=scale)
         self._accum.clear()
 
     # ----------------------------------------------------------------
